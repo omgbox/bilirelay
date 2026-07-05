@@ -528,6 +528,7 @@ def main():
             "--cache=yes",
             "--demuxer-max-bytes=50M",
             "--force-window",
+            "--no-ytdl",
         ]
         if srt_path:
             cmd.append(f"--sub-file={srt_path}")
