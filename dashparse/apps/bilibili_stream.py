@@ -235,7 +235,43 @@ def extract_streams(html: str) -> tuple[list, list]:
     body = state_js[func_start : func_end + 1]
     video_streams = find_streams(body, var_map, "video")
     audio_streams = find_streams(body, var_map, "audio")
-    return video_streams, audio_streams
+    subtitles = extract_subtitles(body)
+    return video_streams, audio_streams, subtitles
+
+
+def extract_subtitles(body: str) -> list[dict]:
+    subs = []
+    for m in re.finditer(r'title:"([^"]+)",url:"([^"]+)"', body):
+        title = m.group(1)
+        url = m.group(2).replace("\\u002F", "/").replace("\\u0026", "&")
+        subs.append({"title": title, "url": url})
+    return subs
+
+
+def fetch_subtitle_srt(url: str) -> str:
+    req = Request(url, headers={
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://www.bilibili.tv/",
+    })
+    with urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+
+    cues = data.get("body", [])
+    lines = []
+    for i, cue in enumerate(cues, 1):
+        start = format_srt_time(cue["from"])
+        end = format_srt_time(cue["to"])
+        content = cue["content"].replace("\u200e", "").replace("\u200f", "")
+        lines.append(f"{i}\n{start} --> {end}\n{content}\n")
+    return "\n".join(lines)
+
+
+def format_srt_time(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
 def build_mpd(video: dict, audio: dict) -> str:
@@ -338,6 +374,7 @@ def main():
     parser.add_argument("url", help="bilibili.tv video URL")
     parser.add_argument("--quality", "-q", type=int, default=None, help="Video quality index")
     parser.add_argument("--audio", "-a", type=int, default=None, help="Audio quality index")
+    parser.add_argument("--subtitle", "-s", type=int, default=0, help="Subtitle index (0=first, -1=none)")
     parser.add_argument("--list", "-l", action="store_true", help="List streams and select interactively")
     parser.add_argument("--vlc", help="Path to VLC")
     parser.add_argument("--mpd-only", action="store_true", help="Only output MPD, don't play")
@@ -353,13 +390,18 @@ def main():
     video_id = extract_video_id(args.url)
     print(f"Video ID: {video_id}")
 
-    video_streams, audio_streams = extract_streams(html)
+    video_streams, audio_streams, subtitles = extract_streams(html)
     if not video_streams:
         print("Error: No video streams found")
         sys.exit(1)
     if not audio_streams:
         print("Error: No audio streams found")
         sys.exit(1)
+
+    if subtitles:
+        print(f"\n  Subtitles available:")
+        for i, s in enumerate(subtitles):
+            print(f"    [{i}] {s['title']}")
 
     if args.list or args.quality is None:
         vid_idx, aud_idx = select_interactive(video_streams, audio_streams)
@@ -381,6 +423,21 @@ def main():
         f.write(mpd_xml)
     print(f"  MPD: {mpd_path}")
 
+    # Download subtitles
+    srt_files = []
+    if args.subtitle >= 0 and subtitles:
+        sub_idx = min(args.subtitle, len(subtitles) - 1)
+        sub = subtitles[sub_idx]
+        try:
+            srt_content = fetch_subtitle_srt(sub["url"])
+            srt_path = os.path.join(tmp_dir, f"{video_id}_{sub['title']}.srt")
+            with open(srt_path, "w", encoding="utf-8") as f:
+                f.write(srt_content)
+            srt_files.append(srt_path)
+            print(f"  Subtitle: {sub['title']} ({len(srt_content)} bytes)")
+        except Exception as e:
+            print(f"  Subtitle {sub['title']}: {e}")
+
     if args.mpd_only:
         print(mpd_xml)
         return
@@ -392,6 +449,8 @@ def main():
         "--http-referrer=https://www.bilibili.tv/",
         "--network-caching=3000",
     ]
+    if srt_files:
+        vlc_cmd.append(f"--sub-file={srt_files[0]}")
     subprocess.Popen(vlc_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print("  Playing. Press Ctrl+C to stop.")
 

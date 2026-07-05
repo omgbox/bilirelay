@@ -111,8 +111,11 @@ Extract and play bilibili.tv videos via VLC.
 # Interactive mode - lists streams and prompts for selection
 python apps/bilibili_stream.py "https://www.bilibili.tv/en/video/4800104493751296" -l
 
-# Direct quality selection
-python apps/bilibili_stream.py "https://www.bilibili.tv/en/video/4800104493751296" -q 0 -a 0
+# Direct quality selection with subtitles
+python apps/bilibili_stream.py "https://www.bilibili.tv/en/video/4800104493751296" -q 0 -a 0 -s 0
+
+# Without subtitles
+python apps/bilibili_stream.py "https://www.bilibili.tv/en/video/4800104493751296" -q 0 -a 0 -s -1
 
 # Just list streams (no play)
 python apps/bilibili_stream.py "https://www.bilibili.tv/en/video/4800104493751296" -l --mpd-only
@@ -125,6 +128,7 @@ python apps/bilibili_stream.py "https://www.bilibili.tv/en/video/480010449375129
 | `-l`, `--list` | List available streams and select interactively |
 | `-q`, `--quality N` | Video quality index (0 = lowest) |
 | `-a`, `--audio N` | Audio quality index (0 = best) |
+| `-s`, `--subtitle N` | Subtitle index (0 = first available, -1 = none) |
 | `--mpd-only` | Output MPD XML without playing |
 | `--vlc PATH` | Custom VLC executable path |
 
@@ -135,6 +139,9 @@ $ python apps/bilibili_stream.py "https://www.bilibili.tv/en/video/4800104493751
 
 Fetching: https://www.bilibili.tv/en/video/4800104493751296
 Video ID: 4800104493751296
+
+  Subtitles available:
+    [0] English
 
   Video streams:
   IDX  Resolution   Codec                     Bitrate
@@ -157,6 +164,7 @@ Video ID: 4800104493751296
 
   Selected video: 426x240 avc1.64001E
   Selected audio: mp4a.40.5
+  Subtitle: English (60460 bytes)
   Launching VLC...
   Playing. Press Ctrl+C to stop.
 ```
