@@ -463,7 +463,14 @@ def main():
           f"({vid.get('bandwidth', 0) / 1000:.0f}kbps) [#{vid_idx}]")
     print(f"  Audio: {aud.get('codecs')} ({aud.get('bandwidth', 0) / 1000:.0f}kbps) [#{aud_idx}]")
 
-    # Subtitle selection
+    mpd_xml = build_mpd(vid, aud)
+
+    tmp_dir = tempfile.mkdtemp(prefix="bilibili_")
+    mpd_path = os.path.join(tmp_dir, f"{video_id}.mpd")
+    with open(mpd_path, "w", encoding="utf-8") as f:
+        f.write(mpd_xml)
+
+    # Subtitle selection (same tmp_dir as MPD)
     srt_path = None
     if not sub_disable and subtitles:
         sub_idx = -1
@@ -481,7 +488,6 @@ def main():
             sub = subtitles[sub_idx]
             try:
                 srt_content = fetch_subtitle_srt(sub["url"])
-                tmp_dir = tempfile.mkdtemp(prefix="bilibili_")
                 srt_path = os.path.join(tmp_dir, f"{video_id}_{sub['title']}.srt")
                 with open(srt_path, "w", encoding="utf-8") as f:
                     f.write(srt_content)
@@ -491,13 +497,6 @@ def main():
     elif subtitles:
         print(f"\n  Subtitles available: {', '.join(s['title'] for s in subtitles)}")
         print(f"  (use -s en to enable)")
-
-    mpd_xml = build_mpd(vid, aud)
-
-    tmp_dir = tempfile.mkdtemp(prefix="bilibili_")
-    mpd_path = os.path.join(tmp_dir, f"{video_id}.mpd")
-    with open(mpd_path, "w", encoding="utf-8") as f:
-        f.write(mpd_xml)
 
     if args.mpd_only:
         print(f"\n  MPD: {mpd_path}")
