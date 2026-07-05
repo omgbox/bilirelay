@@ -1,4 +1,4 @@
-"""Bilibili DASH stream parser - extracts streams from bilibili.tv and plays via VLC."""
+"""Bilibili DASH stream parser - extracts streams from bilibili.tv and plays via VLC or MPV."""
 import sys
 import os
 import re
@@ -316,18 +316,47 @@ def build_mpd(video: dict, audio: dict) -> str:
 </MPD>"""
 
 
-def find_vlc() -> str | None:
-    candidates = [
-        r"C:\Program Files\VideoLAN\VLC\vlc.exe",
-        r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
-        "/usr/bin/vlc",
-        "/usr/local/bin/vlc",
-        "/opt/homebrew/bin/vlc",
-    ]
-    for p in candidates:
+def find_player(name: str) -> str | None:
+    candidates = {
+        "vlc": [
+            r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+            r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
+            "/usr/bin/vlc",
+            "/usr/local/bin/vlc",
+            "/opt/homebrew/bin/vlc",
+        ],
+        "mpv": [
+            r"C:\Program Files\mpv\mpv.exe",
+            r"C:\Program Files (x86)\mpv\mpv.exe",
+            "/usr/bin/mpv",
+            "/usr/local/bin/mpv",
+            "/opt/homebrew/bin/mpv",
+        ],
+    }
+    for p in candidates.get(name, []):
         if os.path.exists(p):
             return p
     return None
+
+
+def find_sub_lang(subtitles: list[dict], lang: str = "en") -> int:
+    """Find subtitle index matching language code (e.g. 'en'). Returns -1 if not found."""
+    lang = lang.lower()
+    for i, s in enumerate(subtitles):
+        if lang in s["title"].lower():
+            return i
+    return -1
+
+
+def auto_select_best(video_streams: list, audio_streams: list) -> tuple[int, int]:
+    """Auto-select highest bandwidth video and audio."""
+    if not video_streams:
+        return 0, 0
+    # Highest bandwidth video
+    vid_idx = max(range(len(video_streams)), key=lambda i: video_streams[i].get("bandwidth", 0))
+    # First audio (usually best quality)
+    aud_idx = 0
+    return vid_idx, aud_idx
 
 
 def list_streams(video_streams, audio_streams):
@@ -370,20 +399,30 @@ def select_interactive(video_streams, audio_streams):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Stream bilibili.tv videos via VLC")
+    parser = argparse.ArgumentParser(description="Stream bilibili.tv videos via VLC or MPV")
     parser.add_argument("url", help="bilibili.tv video URL")
-    parser.add_argument("--quality", "-q", type=int, default=None, help="Video quality index")
-    parser.add_argument("--audio", "-a", type=int, default=None, help="Audio quality index")
-    parser.add_argument("--subtitle", "-s", type=int, default=0, help="Subtitle index (0=first, -1=none)")
-    parser.add_argument("--list", "-l", action="store_true", help="List streams and select interactively")
-    parser.add_argument("--vlc", help="Path to VLC")
-    parser.add_argument("--mpd-only", action="store_true", help="Only output MPD, don't play")
+    parser.add_argument("-p", "--player", default="vlc", choices=["vlc", "mpv"],
+                        help="Player to use (default: vlc)")
+    parser.add_argument("-q", "--quality", type=int, default=None,
+                        help="Video quality index (default: auto/highest)")
+    parser.add_argument("-a", "--audio", type=int, default=None,
+                        help="Audio quality index (default: 0)")
+    parser.add_argument("-s", "--subtitle", type=str, default="en",
+                        help="Subtitle language code (default: en, use -1 for none)")
+    parser.add_argument("-l", "--list", action="store_true",
+                        help="List streams and select interactively")
+    parser.add_argument("--mpd-only", action="store_true",
+                        help="Only output MPD, don't play")
+    parser.add_argument("--player-path", help="Path to player executable")
     args = parser.parse_args()
 
-    vlc_path = args.vlc or find_vlc()
-    if not vlc_path and not args.mpd_only:
-        print("Error: VLC not found. Install VLC or pass --vlc")
-        sys.exit(1)
+    # Parse subtitle arg
+    sub_lang = None
+    sub_disable = False
+    if args.subtitle == "-1":
+        sub_disable = True
+    else:
+        sub_lang = args.subtitle
 
     print(f"Fetching: {args.url}")
     html = fetch_page(args.url)
@@ -398,22 +437,54 @@ def main():
         print("Error: No audio streams found")
         sys.exit(1)
 
-    if subtitles:
-        print(f"\n  Subtitles available:")
-        for i, s in enumerate(subtitles):
-            print(f"    [{i}] {s['title']}")
-
-    if args.list or args.quality is None:
+    # List mode
+    if args.list:
+        if subtitles:
+            print(f"\n  Subtitles available:")
+            for i, s in enumerate(subtitles):
+                print(f"    [{i}] {s['title']}")
         vid_idx, aud_idx = select_interactive(video_streams, audio_streams)
-    else:
+    elif args.quality is not None:
         vid_idx = min(args.quality, len(video_streams) - 1)
         aud_idx = min(args.audio or 0, len(audio_streams) - 1)
+    else:
+        vid_idx, aud_idx = auto_select_best(video_streams, audio_streams)
 
     vid = video_streams[vid_idx]
     aud = audio_streams[aud_idx]
 
-    print(f"\n  Selected video: {vid.get('width')}x{vid.get('height')} {vid.get('codecs')}")
-    print(f"  Selected audio: {aud.get('codecs')}")
+    print(f"\n  Video: {vid.get('width')}x{vid.get('height')} {vid.get('codecs')} "
+          f"({vid.get('bandwidth', 0) / 1000:.0f}kbps) [#{vid_idx}]")
+    print(f"  Audio: {aud.get('codecs')} ({aud.get('bandwidth', 0) / 1000:.0f}kbps) [#{aud_idx}]")
+
+    # Subtitle selection
+    srt_path = None
+    if not sub_disable and subtitles:
+        sub_idx = -1
+        if sub_lang:
+            sub_idx = find_sub_lang(subtitles, sub_lang)
+            if sub_idx == -1:
+                print(f"\n  Subtitle '{sub_lang}' not found. Available:")
+                for i, s in enumerate(subtitles):
+                    print(f"    [{i}] {s['title']}")
+                sub_idx = 0
+        else:
+            sub_idx = 0
+
+        if sub_idx >= 0:
+            sub = subtitles[sub_idx]
+            try:
+                srt_content = fetch_subtitle_srt(sub["url"])
+                tmp_dir = tempfile.mkdtemp(prefix="bilibili_")
+                srt_path = os.path.join(tmp_dir, f"{video_id}_{sub['title']}.srt")
+                with open(srt_path, "w", encoding="utf-8") as f:
+                    f.write(srt_content)
+                print(f"  Subtitle: {sub['title']} ({len(srt_content)} bytes)")
+            except Exception as e:
+                print(f"  Subtitle {sub['title']}: {e}")
+    elif subtitles:
+        print(f"\n  Subtitles available: {', '.join(s['title'] for s in subtitles)}")
+        print(f"  (use -s en to enable)")
 
     mpd_xml = build_mpd(vid, aud)
 
@@ -421,38 +492,43 @@ def main():
     mpd_path = os.path.join(tmp_dir, f"{video_id}.mpd")
     with open(mpd_path, "w", encoding="utf-8") as f:
         f.write(mpd_xml)
-    print(f"  MPD: {mpd_path}")
-
-    # Download subtitles
-    srt_files = []
-    if args.subtitle >= 0 and subtitles:
-        sub_idx = min(args.subtitle, len(subtitles) - 1)
-        sub = subtitles[sub_idx]
-        try:
-            srt_content = fetch_subtitle_srt(sub["url"])
-            srt_path = os.path.join(tmp_dir, f"{video_id}_{sub['title']}.srt")
-            with open(srt_path, "w", encoding="utf-8") as f:
-                f.write(srt_content)
-            srt_files.append(srt_path)
-            print(f"  Subtitle: {sub['title']} ({len(srt_content)} bytes)")
-        except Exception as e:
-            print(f"  Subtitle {sub['title']}: {e}")
 
     if args.mpd_only:
+        print(f"\n  MPD: {mpd_path}")
         print(mpd_xml)
         return
 
-    print(f"\n  Launching VLC...")
-    vlc_cmd = [
-        vlc_path,
-        mpd_path,
-        "--http-referrer=https://www.bilibili.tv/",
-        "--network-caching=3000",
-    ]
-    if srt_files:
-        vlc_cmd.append(f"--sub-file={srt_files[0]}")
-    subprocess.Popen(vlc_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    print("  Playing. Press Ctrl+C to stop.")
+    # Find player
+    player_exe = args.player_path or find_player(args.player)
+    if not player_exe:
+        print(f"\n  Error: {args.player} not found. Install it or pass --player-path")
+        sys.exit(1)
+
+    # Launch player
+    if args.player == "vlc":
+        cmd = [
+            player_exe,
+            mpd_path,
+            "--http-referrer=https://www.bilibili.tv/",
+            "--network-caching=3000",
+        ]
+        if srt_path:
+            cmd.append(f"--sub-file={srt_path}")
+    else:  # mpv
+        cmd = [
+            player_exe,
+            mpd_path,
+            "--referrer=https://www.bilibili.tv/",
+            "--cache=yes",
+            "--demuxer-max-bytes=50M",
+        ]
+        if srt_path:
+            cmd.append(f"--sub-file={srt_path}")
+
+    print(f"\n  Launching {args.player}...")
+    print(f"  MPD: {mpd_path}")
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"  Playing. Press Ctrl+C to stop.")
 
 
 if __name__ == "__main__":
