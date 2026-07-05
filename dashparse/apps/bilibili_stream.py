@@ -527,13 +527,20 @@ def main():
             "--referrer=https://www.bilibili.tv/",
             "--cache=yes",
             "--demuxer-max-bytes=50M",
+            "--force-window",
         ]
         if srt_path:
             cmd.append(f"--sub-file={srt_path}")
 
     print(f"\n  Launching {args.player}...")
     print(f"  MPD: {mpd_path}")
-    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"  CMD: {' '.join(cmd)}")
+
+    if sys.platform == "win32":
+        subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+    else:
+        subprocess.Popen(cmd)
+
     print(f"  Playing. Press Ctrl+C to stop.")
 
 
