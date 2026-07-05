@@ -537,13 +537,11 @@ def main():
 
     if sys.platform == "win32":
         if args.player == "mpv":
-            # mpv needs --no-terminal to not hang on console
-            cmd.append("--no-terminal")
-            subprocess.Popen(cmd)
+            subprocess.Popen(cmd, creationflags=subprocess.DETACHED_PROCESS, close_fds=True)
         else:
             subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
     else:
-        subprocess.Popen(cmd)
+        subprocess.Popen(cmd, start_new_session=True)
 
     print(f"  Playing. Press Ctrl+C to stop.")
     try:
