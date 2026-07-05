@@ -3,6 +3,7 @@ import sys
 import os
 import re
 import json
+import time
 import argparse
 import subprocess
 import tempfile
@@ -538,11 +539,21 @@ def main():
     print(f"  CMD: {' '.join(cmd)}")
 
     if sys.platform == "win32":
-        subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        if args.player == "mpv":
+            # mpv needs --no-terminal to not hang on console
+            cmd.append("--no-terminal")
+            subprocess.Popen(cmd)
+        else:
+            subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
     else:
         subprocess.Popen(cmd)
 
     print(f"  Playing. Press Ctrl+C to stop.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":
