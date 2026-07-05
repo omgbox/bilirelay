@@ -16,27 +16,39 @@ BiliRelay is a single-file HTTP proxy that converts bilibili.tv's fragmented MP4
 
 ## Quick Start
 
+### Option 1: Standalone exe (Windows, no install)
+
+Download `bilibili_stream.exe` from [Releases](https://github.com/omgbox/bilirelay/releases/tag/v1.0):
+
+```
+bilibili_stream.exe "https://www.bilibili.tv/en/video/4800104493751296"
+```
+
+### Option 2: Run from source
+
 ```
 git clone https://github.com/omgbox/bilirelay.git
 cd bilirelay
+python dashparse/apps/bilibili_stream.py "https://www.bilibili.tv/en/video/4800104493751296"
+```
+
+### Option 3: HTTP proxy + browser/VLC
+
+```
 python bilibili_proxy.py https://www.bilibili.tv/en/video/2047206875
 ```
 
-Then open **http://localhost:8080/player** in your browser.
-
-To use VLC instead:
-
-```
-vlc http://localhost:8080/manifest.mpd
-```
+Then open **http://localhost:8080/player** in your browser, or `vlc http://localhost:8080/manifest.mpd`.
 
 ## Requirements
 
-| Dependency | Required | Notes |
+| Requirement | Required | Notes |
 |---|---|---|
-| **Python 3.11+** | Yes | Stdlib only — no `pip install` needed |
-| **VLC 3.x** | No | Only needed for VLC playback mode |
-| **Modern browser** | No | Chrome, Firefox, Edge — for browser player |
+| **Python 3.11+** | Yes (source only) | Stdlib only — no `pip install` needed |
+| **VLC 3.x** | Yes | Download from [videolan.org](https://www.videolan.org/) |
+| **Modern browser** | No | Chrome, Firefox, Edge — for proxy browser player |
+
+All Python imports are stdlib (urllib, json, re, argparse, etc). No external packages required.
 
 Works on Windows, macOS, and Linux.
 
