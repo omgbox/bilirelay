@@ -1,4 +1,4 @@
-"""Bilibili DASH stream parser - extracts streams from bilibili.tv and plays via VLC or MPV."""
+"""Bilibili DASH stream parser - extracts streams from bilibili.tv and plays via VLC."""
 import sys
 import os
 import re
@@ -315,30 +315,19 @@ def build_mpd(video: dict, audio: dict) -> str:
 </MPD>"""
 
 
-def find_player(name: str) -> str | None:
+def find_vlc() -> str | None:
     import shutil
-    # Check system PATH first
-    found = shutil.which(name)
+    found = shutil.which("vlc")
     if found:
         return found
-    # Fallback to hardcoded paths
-    candidates = {
-        "vlc": [
-            r"C:\Program Files\VideoLAN\VLC\vlc.exe",
-            r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
-            "/usr/bin/vlc",
-            "/usr/local/bin/vlc",
-            "/opt/homebrew/bin/vlc",
-        ],
-        "mpv": [
-            r"C:\Program Files\mpv\mpv.exe",
-            r"C:\Program Files (x86)\mpv\mpv.exe",
-            "/usr/bin/mpv",
-            "/usr/local/bin/mpv",
-            "/opt/homebrew/bin/mpv",
-        ],
-    }
-    for p in candidates.get(name, []):
+    candidates = [
+        r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+        r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
+        "/usr/bin/vlc",
+        "/usr/local/bin/vlc",
+        "/opt/homebrew/bin/vlc",
+    ]
+    for p in candidates:
         if os.path.exists(p):
             return p
     return None
@@ -404,10 +393,8 @@ def select_interactive(video_streams, audio_streams):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Stream bilibili.tv videos via VLC or MPV")
+    parser = argparse.ArgumentParser(description="Stream bilibili.tv videos via VLC")
     parser.add_argument("url", help="bilibili.tv video URL")
-    parser.add_argument("-p", "--player", default="vlc", choices=["vlc", "mpv"],
-                        help="Player to use (default: vlc)")
     parser.add_argument("-q", "--quality", type=int, default=None,
                         help="Video quality index (default: auto/highest)")
     parser.add_argument("-a", "--audio", type=int, default=None,
@@ -418,7 +405,7 @@ def main():
                         help="List streams and select interactively")
     parser.add_argument("--mpd-only", action="store_true",
                         help="Only output MPD, don't play")
-    parser.add_argument("--player-path", help="Path to player executable")
+    parser.add_argument("--vlc-path", help="Path to VLC executable")
     args = parser.parse_args()
 
     # Parse subtitle arg
@@ -502,47 +489,24 @@ def main():
         print(mpd_xml)
         return
 
-    # Find player
-    player_exe = args.player_path or find_player(args.player)
-    if not player_exe:
-        print(f"\n  Error: {args.player} not found. Install it or pass --player-path")
+    # Find VLC
+    vlc_exe = args.vlc_path or find_vlc()
+    if not vlc_exe:
+        print(f"\n  Error: VLC not found. Install it or pass --vlc-path")
         sys.exit(1)
 
-    # Launch player
-    if args.player == "vlc":
-        cmd = [
-            player_exe,
-            mpd_path,
-            "--http-referrer=https://www.bilibili.tv/",
-            "--network-caching=3000",
-        ]
-        if srt_path:
-            cmd.append(f"--sub-file={srt_path}")
-    else:  # mpv
-        cmd = [
-            player_exe,
-            mpd_path,
-            "--referrer=https://www.bilibili.tv/",
-            "--cache=yes",
-            "--demuxer-max-bytes=50M",
-            "--force-window",
-            "--no-ytdl",
-        ]
-        if srt_path:
-            cmd.append(f"--sub-file={srt_path}")
+    cmd = [
+        vlc_exe,
+        mpd_path,
+        "--http-referrer=https://www.bilibili.tv/",
+        "--network-caching=3000",
+    ]
+    if srt_path:
+        cmd.append(f"--sub-file={srt_path}")
 
-    print(f"\n  Launching {args.player}...")
+    print(f"\n  Launching VLC...")
     print(f"  MPD: {mpd_path}")
-    print(f"  CMD: {' '.join(cmd)}")
-
-    if sys.platform == "win32":
-        if args.player == "mpv":
-            subprocess.Popen(cmd, creationflags=subprocess.DETACHED_PROCESS, close_fds=True)
-        else:
-            subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-    else:
-        subprocess.Popen(cmd, start_new_session=True)
-
+    subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0)
     print(f"  Playing. Press Ctrl+C to stop.")
     try:
         while True:
