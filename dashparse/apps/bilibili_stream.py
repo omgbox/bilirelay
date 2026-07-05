@@ -274,10 +274,13 @@ def format_srt_time(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def build_mpd(video: dict, audio: dict) -> str:
-    from xml.sax.saxutils import escape
-    vid_url = escape(video.get("base_url", ""))
-    aud_url = escape(audio.get("base_url", ""))
+def build_mpd(video: dict, audio: dict, raw_urls: bool = False) -> str:
+    vid_url = video.get("base_url", "")
+    aud_url = audio.get("base_url", "")
+    if not raw_urls:
+        from xml.sax.saxutils import escape
+        vid_url = escape(vid_url)
+        aud_url = escape(aud_url)
     vid_codecs = video.get("codecs", "avc1.640028")
     aud_codecs = audio.get("codecs", "mp4a.40.2")
     vid_bw = video.get("bandwidth", 0)
@@ -289,8 +292,6 @@ def build_mpd(video: dict, audio: dict) -> str:
     aud_init = audio.get("initialization", "0-943")
     aud_idx = audio.get("index_range", "944-9603")
 
-    # Extract a common base from the URLs for the Period BaseURL
-    # Use a dummy base since each representation has its own full URL
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011"
      type="static"
@@ -463,7 +464,7 @@ def main():
           f"({vid.get('bandwidth', 0) / 1000:.0f}kbps) [#{vid_idx}]")
     print(f"  Audio: {aud.get('codecs')} ({aud.get('bandwidth', 0) / 1000:.0f}kbps) [#{aud_idx}]")
 
-    mpd_xml = build_mpd(vid, aud)
+    mpd_xml = build_mpd(vid, aud, raw_urls=(args.player == "mpv"))
 
     tmp_dir = tempfile.mkdtemp(prefix="bilibili_")
     mpd_path = os.path.join(tmp_dir, f"{video_id}.mpd")
