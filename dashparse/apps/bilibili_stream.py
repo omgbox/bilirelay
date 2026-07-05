@@ -317,6 +317,12 @@ def build_mpd(video: dict, audio: dict) -> str:
 
 
 def find_player(name: str) -> str | None:
+    import shutil
+    # Check system PATH first
+    found = shutil.which(name)
+    if found:
+        return found
+    # Fallback to hardcoded paths
     candidates = {
         "vlc": [
             r"C:\Program Files\VideoLAN\VLC\vlc.exe",
